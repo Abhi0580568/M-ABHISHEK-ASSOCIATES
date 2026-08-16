@@ -1,7 +1,6 @@
 # M. Abhishek & Associates, Chartered Accountants
-# Replace REPLACE-WITH-YOUR-DOMAIN.in with your registered domain before upload.
 
 User-agent: *
 Allow: /
 
-Sitemap: https://www.REPLACE-WITH-YOUR-DOMAIN.in/sitemap.xml
+Sitemap: https://www.mabhishekassociates.com/sitemap.xml
