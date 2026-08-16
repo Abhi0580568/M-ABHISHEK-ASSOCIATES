@@ -3,4 +3,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://www.mabhishekassociates.com/sitemap.xml
+Sitemap: https://mabhishekassociates.com/sitemap.xml
