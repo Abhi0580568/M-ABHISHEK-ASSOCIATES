@@ -30,6 +30,18 @@
 <meta name="twitter:title" content="M. Abhishek &amp; Associates | Chartered Accountants">
 <meta name="twitter:description" content="Chartered Accountancy practice led by CA Abhishek Mishra. Based in Kanpur, serving clients across India.">
 
+<!-- Google Analytics 4 — property "mabhishekassociates.com", account "M. Abhishek & Associates".
+     Aggregate statistics only: visit counts, pages, city-level location, device,
+     and where the visit came from. It does NOT identify individual visitors by
+     name, and no client data from the enquiry form is sent here. -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-WRBFVTQW2F"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-WRBFVTQW2F', { anonymize_ip: true });
+</script>
+
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -11439,9 +11451,13 @@ const SITE_ANALYTICS = {
   // endpoint empty and use Google Analytics 4 + Search Console instead,
   // or host a small JSON endpoint elsewhere and put its PUBLIC READ-ONLY
   // URL here. Never paste a private analytics key into this file.
-  endpoint: '',
+  // Real server-side tally kept by the firm's own Apps Script. Each page load
+  // calls ?action=count, which increments the total and returns it. Nothing is
+  // random, nothing is stored in localStorage, and no third party is involved.
+  // It counts page views, not unique people — the label says so.
+  endpoint: 'https://script.google.com/macros/s/AKfycbyDMxPIy6lUz3N4Y2o2Zvr4a42G1cUCPREbUDoumhqZ4ilLYZHjrS_0FxEQdZ8JF-LX/exec?action=count',
   field:    'value',
-  metric:   'visitors'   // 'visitors' | 'pageviews' — the on-screen label follows this
+  metric:   'pageviews'  // 'visitors' | 'pageviews' — the on-screen label follows this
 };
 
 (function trafficReadout() {
