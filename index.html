@@ -12002,9 +12002,12 @@ window.openTdsPanel = function openTdsPanel() {
    here, and none should ever be pasted into this file, because
    everything in this HTML is readable by every visitor.
 
-   Until GOOGLE_FORM_URL is filled in, the assistant shows the
-   enquiry details on screen with a "Connect Google Form" note and
-   offers WhatsApp and phone instead. It does not pretend to submit.
+   SUPERSEDED (Nov 2026): the Google Form route is no longer used.
+   The "Ask Your CA" enquiry form now posts through window.submitEnquiry
+   to the same Apps Script backend as the main enquiry modal, so every
+   enquiry on this site lands in one Google Sheet with one reference
+   series. These GOOGLE_FORM_* constants are left only so that older
+   code paths referring to them do not break; they stay empty.
    ---------------------------------------------------------------------- */
 const GOOGLE_FORM_URL           = '';   // .../formResponse
 const GOOGLE_FORM_ENTRY_NAME    = '';   // entry.XXXXXXXXX  — required
@@ -12330,6 +12333,10 @@ function askShowLeadForm(serviceName) {
         <input type="email" id="askLeadEmail" required autocomplete="email">
       </div>
       <div class="ask-field">
+        <label for="askLeadCity">City <span class="req">*</span></label>
+        <input type="text" id="askLeadCity" required autocomplete="address-level2">
+      </div>
+      <div class="ask-field">
         <label for="askLeadBusiness">Business Name <span style="color:var(--slate);font-weight:400;">(optional)</span></label>
         <input type="text" id="askLeadBusiness" autocomplete="organization">
       </div>
@@ -12348,14 +12355,6 @@ function askShowLeadForm(serviceName) {
       <button type="submit" class="ask-mini solid" style="width:100%;padding:10px;">Submit Enquiry</button>
       <p class="ask-formstatus" id="askLeadStatus" role="status" aria-live="polite"></p>
 
-      ${configured ? '' : `
-      <div class="ask-admin">
-        <b>Connect Google Form</b><br>
-        Lead delivery is not configured yet. Set <code>GOOGLE_FORM_URL</code> and the entry IDs in this file
-        (the instructions are in the comment block above the settings) and submissions will post straight into
-        your Google Sheet. Until then, submitting will show your details on screen so you can send them by
-        WhatsApp instead — nothing is silently lost.
-      </div>`}
     </form>`);
 
   setTimeout(() => {
@@ -12370,102 +12369,69 @@ function askSubmitLead(ev) {
   const st = document.getElementById('askLeadStatus');
   const set = (cls, msg) => { if (st) { st.className = 'ask-formstatus ' + cls; st.textContent = msg; } };
 
-  const name    = g('askLeadName').trim();
-  const mobile  = g('askLeadMobile').trim();
-  const email   = g('askLeadEmail').trim();
-  const business= g('askLeadBusiness').trim();
-  const service = g('askLeadService').trim();
-  const message = g('askLeadMessage').trim();
+  const name     = g('askLeadName').trim();
+  const mobile   = g('askLeadMobile').trim();
+  const email    = g('askLeadEmail').trim();
+  const city     = g('askLeadCity').trim();
+  const business = g('askLeadBusiness').trim();
+  const service  = g('askLeadService').trim();
+  const message  = g('askLeadMessage').trim();
 
-  if (!name)                                  { set('err', 'Please enter your full name.'); return; }
+  if (!name)                                        { set('err', 'Please enter your full name.'); return; }
   if (!/[0-9]{7,}/.test(mobile.replace(/\D/g, ''))) { set('err', 'Please enter a valid mobile number.'); return; }
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/.test(email)) { set('err', 'Please enter a valid email address.'); return; }
+  if (city.length < 2)                              { set('err', 'Please enter your city.'); return; }
 
-  const configured = !!(GOOGLE_FORM_URL && GOOGLE_FORM_ENTRY_NAME &&
-                        GOOGLE_FORM_ENTRY_MOBILE && GOOGLE_FORM_ENTRY_EMAIL);
-
-  if (!configured) {
-    set('err', 'Lead delivery is not connected yet — your details have not been sent.');
-    askPush(`<p>The enquiry form is not connected to a Google Form yet, so I have not submitted anything.
-      Here are your details — please send them to us on WhatsApp or by phone and nothing is lost:</p>
-      <ul>
-        <li><strong>Name:</strong> ${askEsc(name)}</li>
-        <li><strong>Mobile:</strong> ${askEsc(mobile)}</li>
-        <li><strong>Email:</strong> ${askEsc(email)}</li>
-        ${business ? `<li><strong>Business:</strong> ${askEsc(business)}</li>` : ''}
-        ${service  ? `<li><strong>Service:</strong> ${askEsc(service)}</li>`  : ''}
-        ${message  ? `<li><strong>Query:</strong> ${askEsc(message)}</li>`    : ''}
-      </ul>
-      <div class="ask-svc-btns" style="margin-top:9px;">
-        <button type="button" class="ask-mini solid" onclick="askSendLeadWhatsApp(${JSON.stringify(
-          JSON.stringify({name, mobile, email, business, service, message})
-        ).replace(/"/g, '&quot;')})">Send on WhatsApp</button>
-        <a class="ask-mini" href="tel:${ASK_PHONE}" style="text-decoration:none;display:inline-block;">Call the Office</a>
-      </div>`);
+  /* Submitted through the SAME backend as the main enquiry form, so this
+     lands as a row in the firm's Google Sheet with its own reference
+     number. There is no separate Google Form any more. */
+  if (typeof window.submitEnquiry !== 'function') {
+    set('err', 'The enquiry system is not connected yet — your details have not been sent.');
     return;
   }
 
+  const btn = document.querySelector('#askLeadForm button[type="submit"]');
+  if (btn) btn.disabled = true;
   set('', 'Submitting…');
 
-  /* Posted through a hidden iframe rather than fetch, so that the iframe's
-     load event gives a genuine delivered/failed signal. A cross-origin
-     fetch to Google Forms returns an opaque response that cannot be read,
-     which would force us to claim success without knowing. */
-  let frame = document.getElementById('askLeadSink');
-  if (!frame) {
-    frame = document.createElement('iframe');
-    frame.id = 'askLeadSink';
-    frame.name = 'askLeadSink';
-    frame.style.display = 'none';
-    document.body.appendChild(frame);
-  }
-
-  const f = document.createElement('form');
-  f.action = GOOGLE_FORM_URL;
-  f.method = 'POST';
-  f.target = 'askLeadSink';
-  f.style.display = 'none';
-
-  const add = (k, v) => {
-    if (!k) return;
-    const i = document.createElement('input');
-    i.type = 'hidden'; i.name = k; i.value = v;
-    f.appendChild(i);
-  };
-  add(GOOGLE_FORM_ENTRY_NAME,     name);
-  add(GOOGLE_FORM_ENTRY_MOBILE,   mobile);
-  add(GOOGLE_FORM_ENTRY_EMAIL,    email);
-  add(GOOGLE_FORM_ENTRY_BUSINESS, business);
-  add(GOOGLE_FORM_ENTRY_SERVICE,  service);
-  add(GOOGLE_FORM_ENTRY_MESSAGE,  message);
-  document.body.appendChild(f);
-
-  let settled = false;
-  const done = ok => {
-    if (settled) return;
-    settled = true;
-    frame.removeEventListener('load', onLoad);
-    try { document.body.removeChild(f); } catch (e) { /* already gone */ }
-    if (ok) {
-      set('ok', 'Submitted.');
-      const el = document.getElementById('askLeadForm');
-      if (el) el.querySelectorAll('input,textarea,button').forEach(x => x.disabled = true);
-      askPush(`<p>Thank you! Your details have been received. CA Abhishek Mishra / our team will contact you
-        regarding your query.</p>`);
+  window.submitEnquiry({
+    name: name, email: email, mobile: mobile, city: city,
+    business: business, service: service, requirement: message
+  }).then(function (res) {
+    if (res && res.ok && res.ref && res.ref !== 'IGNORED') {
+      set('ok', 'Submitted. Reference ' + res.ref);
+      const f = document.getElementById('askLeadForm');
+      if (f) f.style.display = 'none';
+      askPush(`<p><strong>Thank you — your enquiry has been recorded.</strong></p>
+        <p>Your reference number is <strong>${askEsc(res.ref)}</strong>. CA Abhishek Mishra or a member of
+        the team will contact you on the details you have given. Please quote this reference in any follow-up.</p>
+        <p style="font-size:11.5px;color:var(--slate);">Submitting an enquiry does not by itself create a
+        professional engagement. We confirm scope and fees in writing before any work begins.</p>`);
+    } else if (res && res.error === 'validation') {
+      if (btn) btn.disabled = false;
+      set('err', res.message || 'Please check the details you have entered.');
     } else {
-      set('err', 'Could not submit.');
-      askPush(`<p>Your details could not be submitted right now. Please use WhatsApp or call us.</p>
+      if (btn) btn.disabled = false;
+      set('err', 'Your enquiry could not be submitted. Please try WhatsApp or phone.');
+      askPush(`<p>I could not submit that, so nothing has been recorded. Here are your details —
+        please send them to us directly and nothing is lost:</p>
+        <ul>
+          <li><strong>Name:</strong> ${askEsc(name)}</li>
+          <li><strong>Mobile:</strong> ${askEsc(mobile)}</li>
+          <li><strong>Email:</strong> ${askEsc(email)}</li>
+          <li><strong>City:</strong> ${askEsc(city)}</li>
+          ${business ? `<li><strong>Business:</strong> ${askEsc(business)}</li>` : ''}
+          ${service  ? `<li><strong>Service:</strong> ${askEsc(service)}</li>`  : ''}
+          ${message  ? `<li><strong>Query:</strong> ${askEsc(message)}</li>`    : ''}
+        </ul>
         <div class="ask-svc-btns" style="margin-top:9px;">
-          <button type="button" class="ask-mini solid" onclick="askWhatsApp()">WhatsApp</button>
+          <button type="button" class="ask-mini solid" onclick="askSendLeadWhatsApp(${JSON.stringify(
+            JSON.stringify({name, mobile, email, business, service, message})
+          ).replace(/"/g, '&quot;')})">Send on WhatsApp</button>
           <a class="ask-mini" href="tel:${ASK_PHONE}" style="text-decoration:none;display:inline-block;">Call the Office</a>
         </div>`);
     }
-  };
-  const onLoad = () => done(true);
-  frame.addEventListener('load', onLoad);
-  setTimeout(() => done(false), 12000);   // network stall — report failure, never assume success
-
-  try { f.submit(); } catch (e) { done(false); }
+  });
 }
 
 function askSendLeadWhatsApp(json) {
@@ -12849,6 +12815,33 @@ function askSend() {
     md.setAttribute('aria-hidden','false');
     document.body.style.overflow='hidden';
     setTimeout(function(){ if(window.innerWidth>620){ try{$('eqName').focus({preventScroll:true});}catch(e){} } },150);
+  };
+
+  /* One shared submit path. The "Ask Your CA" panel calls this too, so both
+     routes write to the SAME Google Sheet and return the same kind of
+     reference number. There is only one backend in the whole site. */
+  window.submitEnquiry = function (d) {
+    if (!ENQUIRY_ENDPOINT) return Promise.resolve({ ok: false, error: 'not-configured' });
+    var body = {
+      token:       d.token || ('T' + Date.now() + Math.random().toString(36).slice(2, 10)),
+      name:        d.name        || '',
+      email:       d.email       || '',
+      mobile:      d.mobile      || '',
+      city:        d.city        || '',
+      business:    d.business    || '',
+      service:     d.service     || '',
+      requirement: d.requirement || '',
+      preference:  d.preference  || '',
+      page:        location.href,
+      company_website: '',
+      file:        null
+    };
+    return fetch(ENQUIRY_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(body)
+    }).then(function (r) { return r.json(); })
+      .catch(function () { return { ok: false, error: 'network' }; });
   };
 
   window.closeEnquiry = function () {
